@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="MeetingInsights.API/MeetingInsights.API.csproj" />
+  <Project Path="MeetingInsights.Core/MeetingInsights.Core.csproj" />
+</Solution>
