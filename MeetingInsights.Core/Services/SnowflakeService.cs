@@ -407,6 +407,99 @@ namespace MeetingInsights.Core.Services
 
             return "";
         }
+        /// <summary>
+        /// Analyze sentiment of text using Snowflake Cortex SENTIMENT function
+        /// Returns a score from -1 (negative) to +1 (positive)
+        /// </summary>
+        public async Task<double> AnalyzeSentimentAsync(string text)
+        {
+            try
+            {
+                using var connection = new SnowflakeDbConnection();
+                connection.ConnectionString = _settings.ConnectionString;
+                await connection.OpenAsync();
 
+                using var command = connection.CreateCommand();
+                // Use Cortex SENTIMENT function
+                command.CommandText = @"
+            SELECT SNOWFLAKE.CORTEX.SENTIMENT(:text) AS sentiment_score";
+
+                command.Parameters.Add(new SnowflakeDbParameter
+                {
+                    ParameterName = "text",
+                    Value = text,
+                    DbType = DbType.String
+                });
+
+                using var reader = await command.ExecuteReaderAsync();
+                if (await reader.ReadAsync())
+                {
+                    var score = reader.GetDouble(0);
+                    return score;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Error analyzing sentiment, returning neutral");
+            }
+
+            return 0.0; // Neutral on error
+        }
+
+        /// <summary>
+        /// Batch analyze sentiment for multiple texts
+        /// </summary>
+        public async Task<List<double>> AnalyzeSentimentBatchAsync(List<string> texts)
+        {
+            var results = new List<double>();
+
+            try
+            {
+                using var connection = new SnowflakeDbConnection();
+                connection.ConnectionString = _settings.ConnectionString;
+                await connection.OpenAsync();
+
+                foreach (var text in texts)
+                {
+                    if (string.IsNullOrWhiteSpace(text))
+                    {
+                        results.Add(0.0);
+                        continue;
+                    }
+
+                    using var command = connection.CreateCommand();
+                    command.CommandText = @"
+                SELECT SNOWFLAKE.CORTEX.SENTIMENT(:text) AS sentiment_score";
+
+                    command.Parameters.Add(new SnowflakeDbParameter
+                    {
+                        ParameterName = "text",
+                        Value = text.Length > 5000 ? text.Substring(0, 5000) : text,
+                        DbType = DbType.String
+                    });
+
+                    using var reader = await command.ExecuteReaderAsync();
+                    if (await reader.ReadAsync())
+                    {
+                        results.Add(reader.GetDouble(0));
+                    }
+                    else
+                    {
+                        results.Add(0.0);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in batch sentiment analysis");
+                // Fill remaining with neutral
+                while (results.Count < texts.Count)
+                {
+                    results.Add(0.0);
+                }
+            }
+
+            return results;
+        }
     }
 }
