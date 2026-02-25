@@ -15,5 +15,7 @@ namespace MeetingInsights.Core.Services.Interfaces
         Task<string> GetMeetingTranscriptTextAsync(string teamId, string meetingId);
         Task<List<MeetingTranscript>> GetMeetingsByTeamAsync(string teamId);
         Task<string> SummarizeWithCortexAsync(string text);
+        Task<double> AnalyzeSentimentAsync (string text);
+        Task<List<double>> AnalyzeSentimentBatchAsync(List<string> texts);
     }
 }
