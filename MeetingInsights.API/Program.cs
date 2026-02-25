@@ -17,6 +17,7 @@ builder.Services.AddScoped<ISnowflakeService, SnowflakeService>();
 builder.Services.AddScoped<IMeetingService, MeetingService>();
 builder.Services.AddScoped<IQueryService, QueryService>();
 builder.Services.AddScoped<IAtomizerService, AtomizerService>();
+builder.Services.AddScoped<IActionItemService, ActionItemService>();
 
 builder.Services.AddCors(options =>
 {
