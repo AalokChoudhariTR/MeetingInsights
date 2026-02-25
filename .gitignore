@@ -326,3 +326,4 @@ test-coverage-summary.json
 # Security scan reports (generated files)
 security-reports/*.json
 /MeetingInsights.API/appsettings.json
+/MeetingInsights.TeamsBot/appsettings.json

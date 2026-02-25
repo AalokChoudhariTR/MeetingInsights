@@ -1,0 +1,6 @@
+@MeetingInsights.TeamsBot_HostAddress = http://localhost:5156
+
+GET {{MeetingInsights.TeamsBot_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
