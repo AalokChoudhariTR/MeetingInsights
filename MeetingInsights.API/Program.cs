@@ -14,6 +14,8 @@ builder.Services.AddSwaggerGen();
 builder.Services.Configure<SnowflakeSettings>(builder.Configuration.GetSection("Snowflake"));
 
 builder.Services.AddScoped<ISnowflakeService, SnowflakeService>();
+builder.Services.AddScoped<IMeetingService, MeetingService>();
+builder.Services.AddScoped<IQueryService, QueryService>();
 builder.Services.AddScoped<IAtomizerService, AtomizerService>();
 
 builder.Services.AddCors(options =>

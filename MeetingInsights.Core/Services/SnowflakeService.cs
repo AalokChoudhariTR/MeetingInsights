@@ -8,6 +8,8 @@ using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Text;
+using System.Text.Json.Nodes;
+using static MeetingInsights.Core.Models.QueryModels;
 
 namespace MeetingInsights.Core.Services
 {
@@ -148,8 +150,263 @@ namespace MeetingInsights.Core.Services
                 _logger.LogError(ex, "Error saving chunks to Snowflake");
                 throw;
             }
-
             return savedCount;
         }
+
+
+        /// <summary>
+        /// Search chunks using Cortex Search Service
+        /// </summary>
+        public async Task<List<SearchResult>> SearchWithCortexAsync(string query,string teamId, int maxResults = 5)
+        {
+            var results = new List<SearchResult>();
+            try
+            {
+                using var connection = new SnowflakeDbConnection();
+                connection.ConnectionString = _settings.ConnectionString;
+                await connection.OpenAsync();
+                using var command = connection.CreateCommand();
+
+                // Call Cortex Search Service
+                command.CommandText = $@"
+            SELECT PARSE_JSON(
+                SNOWFLAKE.CORTEX.SEARCH_PREVIEW(
+                    'MEETING_SEARCH_SERVICE',
+                    '{{
+                        ""query"": ""{EscapeJsonString(query)}"",
+                        ""columns"": [""CHUNK_ID"", ""MEETING_ID"", ""MEETING_DATE"", ""TEAM_ID"", ""ENRICHED_TEXT""],
+                        ""filter"" : {{""@eq"": {{""TEAM_ID"": ""{EscapeJsonString(teamId)}""}}}},
+                        ""limit"": {maxResults}
+                    }}'
+                )
+            ):results AS search_results";
+
+                _logger.LogInformation("Searching for team {TeamId} with query: {Query}", teamId, query);
+
+                using var reader = await command.ExecuteReaderAsync();
+                if (await reader.ReadAsync())
+                {
+                    var jsonResult = reader.GetString(0);
+                    if (!string.IsNullOrEmpty(jsonResult))
+                    {
+                        var jsonArray = JsonNode.Parse(jsonResult)?.AsArray();
+                        if (jsonArray != null)
+                        {
+                            foreach (var item in jsonArray)
+                            {
+                                if (item == null) continue;
+                                results.Add(new SearchResult
+                                {
+                                    ChunkId = item["CHUNK_ID"]?.GetValue<string>() ?? "",
+                                    MeetingId = item["MEETING_ID"]?.GetValue<string>() ??
+                                               ExtractMeetingIdFromChunkId(item["CHUNK_ID"]?.GetValue<string>() ?? ""),
+                                    MeetingDate = DateTime.TryParse(item["MEETING_DATE"]?.GetValue<string>(), out var date)
+                                                 ? date : DateTime.MinValue,
+                                    EnrichedText = item["ENRICHED_TEXT"]?.GetValue<string>() ?? "",
+                                    SimilarityScore = item["@scores"]?["cosine_similarity"]?.GetValue<double>() ?? 0
+                                });
+                            }
+                        }
+                    }
+                }
+                _logger.LogInformation("Cortex Search returned {Count} for team {TeamId} results for query: {Query}",
+                    results.Count, teamId, query);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error searching with Cortex for query: {Query}", query);
+                throw;
+            }
+            return results;
+        }
+
+        /// <summary>
+        /// Generate an answer using Cortex Complete (LLM)
+        /// </summary>
+        public async Task<string> GenerateAnswerWithCortexAsync(string prompt)
+
+        {
+            try
+            {
+                using var connection = new SnowflakeDbConnection();
+
+                connection.ConnectionString = _settings.ConnectionString;
+                await connection.OpenAsync();
+                using var command = connection.CreateCommand();
+
+                // Use Cortex Complete with llama3-70b model
+                command.CommandText = @"
+            SELECT SNOWFLAKE.CORTEX.COMPLETE(
+                'llama3-70b',
+                :prompt
+            ) AS response";
+                command.Parameters.Add(new SnowflakeDbParameter
+                {
+                    ParameterName = "prompt",
+                    Value = prompt,
+                    DbType = DbType.String
+                });
+
+                using var reader = await command.ExecuteReaderAsync();
+
+                if (await reader.ReadAsync())
+                {
+                    var response = reader.GetString(0);
+                    _logger.LogInformation("Cortex Complete generated response of {Length} characters",
+                        response?.Length ?? 0);
+                    return response ?? "";
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error calling Cortex Complete");
+                throw;
+            }
+            return "";
+        }
+
+        // Helper methods
+        private string EscapeJsonString(string input)
+        {
+            return input
+                .Replace("\\", "\\\\")
+                .Replace("\"", "\\\"")
+                .Replace("\n", "\\n")
+                .Replace("\r", "\\r")
+                .Replace("\t", "\\t");
+        }
+
+        private string ExtractMeetingIdFromChunkId(string chunkId)
+        {
+            // MTG-001-003 -> MTG-001
+            var parts = chunkId.Split('-');
+            if (parts.Length >= 2)
+                return $"{parts[0]}-{parts[1]}";
+            return chunkId;
+        }
+
+        /// <summary>
+        /// Get full transcript text for a specific meeting (combined chunks)
+        /// </summary>
+        public async Task<string> GetMeetingTranscriptTextAsync(string teamId, string meetingId)
+        {
+            try
+            {
+                using var connection = new SnowflakeDbConnection();
+                connection.ConnectionString = _settings.ConnectionString;
+                await connection.OpenAsync();
+
+                using var command = connection.CreateCommand();
+                command.CommandText = @"
+            SELECT LISTAGG(CHUNK_TEXT, ' ') WITHIN GROUP (ORDER BY CHUNK_SEQUENCE) AS full_text
+            FROM PROCESSED_CHUNKS
+            WHERE TEAM_ID = :teamId AND MEETING_ID = :meetingId
+            GROUP BY MEETING_ID";
+
+                command.Parameters.Add(new SnowflakeDbParameter { ParameterName = "teamId", Value = teamId, DbType = DbType.String });
+                command.Parameters.Add(new SnowflakeDbParameter { ParameterName = "meetingId", Value = meetingId, DbType = DbType.String });
+
+                using var reader = await command.ExecuteReaderAsync();
+                if (await reader.ReadAsync())
+                {
+                    return reader.GetString(0);
+                }
+
+                return string.Empty;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting transcript for meeting {MeetingId}", meetingId);
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Get all meetings for a team
+        /// </summary>
+        public async Task<List<MeetingTranscript>> GetMeetingsByTeamAsync(string teamId)
+        {
+            var meetings = new List<MeetingTranscript>();
+
+            try
+            {
+                using var connection = new SnowflakeDbConnection();
+                connection.ConnectionString = _settings.ConnectionString;
+                await connection.OpenAsync();
+
+                using var command = connection.CreateCommand();
+                command.CommandText = @"
+            SELECT DISTINCT
+                MEETING_ID,
+                MEETING_DATE,
+                TEAM_ID
+            FROM PROCESSED_CHUNKS
+            WHERE TEAM_ID = :teamId
+            ORDER BY MEETING_DATE";
+
+                command.Parameters.Add(new SnowflakeDbParameter { ParameterName = "teamId", Value = teamId, DbType = DbType.String });
+
+                using var reader = await command.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    meetings.Add(new MeetingTranscript
+                    {
+                        MeetingId = reader.GetString(0),
+                        MeetingDate = reader.GetDateTime(1),
+                        TeamId = reader.GetString(2)
+                    });
+                }
+
+                _logger.LogInformation("Found {Count} meetings for team {TeamId}", meetings.Count, teamId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting meetings for team {TeamId}", teamId);
+                throw;
+            }
+
+            return meetings;
+        }
+
+        /// <summary>
+        /// Summarize text using Snowflake Cortex SUMMARIZE function
+        /// </summary>
+        public async Task<string> SummarizeWithCortexAsync(string text)
+        {
+            try
+            {
+                using var connection = new SnowflakeDbConnection();
+                connection.ConnectionString = _settings.ConnectionString;
+                await connection.OpenAsync();
+
+                using var command = connection.CreateCommand();
+                // Use Cortex SUMMARIZE function
+                command.CommandText = @"
+            SELECT SNOWFLAKE.CORTEX.SUMMARIZE(:text) AS summary";
+
+                command.Parameters.Add(new SnowflakeDbParameter
+                {
+                    ParameterName = "text",
+                    Value = text,
+                    DbType = DbType.String
+                });
+
+                using var reader = await command.ExecuteReaderAsync();
+                if (await reader.ReadAsync())
+                {
+                    var summary = reader.GetString(0);
+                    _logger.LogInformation("Cortex SUMMARIZE generated {Length} character summary", summary?.Length ?? 0);
+                    return summary ?? "";
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error calling Cortex SUMMARIZE");
+                throw;
+            }
+
+            return "";
+        }
+
     }
 }
