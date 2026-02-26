@@ -3,6 +3,7 @@ import { App } from "@microsoft/teams.apps";
 import { LocalStorage } from "@microsoft/teams.common";
 import config from "./config";
 import { ManagedIdentityCredential } from "@azure/identity";
+import { sendQueryToBackend } from "./services/queryService";
 
 // Create storage for conversation history
 const storage = new LocalStorage();
@@ -86,10 +87,29 @@ app.on("message", async (context) => {
     return;
   }
 
-  // Default echo behavior
   const state = getConversationState(activity.conversation.id);
   state.count++;
-  await context.send(`[${state.count}] you said: ${text}`);
+
+  try {
+    const teamId = "TEAM_A"; // Teams tenant as TeamId
+    const userQuestion = text;
+    console.log("Sending to backend:", {
+  teamId,
+  question: userQuestion,
+  maxResults: 5,
+});
+    const backendResponse = await sendQueryToBackend({
+      teamId,
+      question: userQuestion,
+      maxResults: 5, // optional
+    });
+    
+    await context.send(`[${state.count}] Backend response:\n${JSON.stringify(backendResponse, null, 2)}`);
+    console.log("Received from backend:", backendResponse);
+  } catch (error) {
+    console.error(error);
+    await context.send("Oops! Something went wrong while sending your query.");
+  }
 });
 
 export default app;
