@@ -1,0 +1,71 @@
+{
+  "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.16/MicrosoftTeams.schema.json",
+  "manifestVersion": "1.16",
+  "version": "1.0.0",
+  "id": "YOUR-BOT-APP-ID-GUID",
+  "packageName": "com.company.meetinginsights",
+  "developer": {
+    "name": "Your Company",
+    "websiteUrl": "https://yourcompany.com",
+    "privacyUrl": "https://yourcompany.com/privacy",
+    "termsOfUseUrl": "https://yourcompany.com/terms"
+  },
+  "icons": {
+    "color": "color.png",
+    "outline": "outline.png"
+  },
+  "name": {
+    "short": "Meeting Insights",
+    "full": "Meeting Insights Bot"
+  },
+  "description": {
+    "short": "AI-powered meeting transcript analysis",
+    "full": "Analyze meeting transcripts, track decisions, action items, and team sentiment using AI."
+  },
+  "accentColor": "#5558AF",
+  "bots": [
+    {
+      "botId": "YOUR-BOT-APP-ID",
+      "scopes": [ "team", "personal", "groupchat" ],
+      "supportsFiles": false,
+      "isNotificationOnly": false,
+      "commandLists": [
+        {
+          "scopes": [ "team", "groupchat" ],
+          "commands": [
+            {
+              "title": "help",
+              "description": "Show available commands"
+            },
+            {
+              "title": "summary",
+              "description": "Get meeting summaries"
+            },
+            {
+              "title": "decisions",
+              "description": "View all decisions"
+            },
+            {
+              "title": "conflicts",
+              "description": "View conflicting decisions"
+            },
+            {
+              "title": "action-items",
+              "description": "View action items"
+            },
+            {
+              "title": "pending",
+              "description": "View pending items"
+            },
+            {
+              "title": "sentiment",
+              "description": "View team sentiment"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "permissions": [ "identity", "messageTeamMembers" ],
+  "validDomains": [ "your-bot-domain.azurewebsites.net" ]
+}

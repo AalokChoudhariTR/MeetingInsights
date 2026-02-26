@@ -1,4 +1,5 @@
 <Solution>
   <Project Path="MeetingInsights.API/MeetingInsights.API.csproj" />
   <Project Path="MeetingInsights.Core/MeetingInsights.Core.csproj" />
+  <Project Path="MeetingInsights.TeamsBot/MeetingInsights.TeamsBot.csproj" Id="2c10f875-d1fd-4aa5-a17d-7f186c56a376" />
 </Solution>
