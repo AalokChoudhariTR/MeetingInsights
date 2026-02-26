@@ -313,7 +313,7 @@ core-packages/core-components/.storybook-common/json/deployment-info.json
 
 # Email Templates
 internal-email-templates/*
-
+MeetingInsights.API/appsettings.Development.json
 # Coverage reports (generated files)
 test-coverage-report.html
 test-coverage-report.json
